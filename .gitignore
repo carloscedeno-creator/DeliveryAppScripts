@@ -1,0 +1,28 @@
+# Clasp - Configuración local (contiene scriptId)
+.clasp.json
+
+# Node modules (si instalas dependencias)
+node_modules/
+
+# Logs
+*.log
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Archivos temporales
+*.tmp
+*.temp
+~$*
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Archivos de backup
+*.bak
+*~
+
