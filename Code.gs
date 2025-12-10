@@ -15,14 +15,11 @@ const DEBUG_MODE = true;
 const SHEET_NAME = 'JiraData';
 const YOUR_JIRA_DOMAIN = 'goavanto.atlassian.net';
 const YOUR_EMAIL = 'carlos.cedeno@agenticdream.com';
-// TOKEN - Se almacena en PropertiesService para mayor seguridad
-// Para configurar el token por primera vez, ejecuta: setupApiToken()
-const JQL_QUERY = 'Project = "obd" AND issuetype != "Sub-task" ORDER BY created DESC';
+// TOKEN - Reemplaza con tu token de Jira
+// Obtén tu token en: https://id.atlassian.com/manage-profile/security/api-tokens
+const YOUR_API_TOKEN = 'TU_TOKEN_AQUI';
 
-// --- CONFIGURACIÓN DE PERFORMANCE ---
-const CHUNK_SIZE = 500;
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 1000;
+const JQL_QUERY = 'Project = "obd" AND issuetype != "Sub-task" ORDER BY created DESC';
 
 // --- CONFIGURACIÓN DE HOJAS ---
 const METRICS_SHEET_NAME = 'MetricasSprint';
@@ -33,183 +30,6 @@ const LOOKER_DEVS_SHEET_NAME = 'Data_Looker_Devs';
 const LOOKER_EPICS_SHEET_NAME = 'Data_Looker_Epics';
 const CAPACITY_SHEET_NAME = 'Data_Capacity_Planning';
 
-
-// ----------------------------------------------------------------------------
-// CONFIGURACIÓN Y SEGURIDAD
-// ----------------------------------------------------------------------------
-
-/**
- * Obtiene el token API de Jira desde PropertiesService
- * Si no existe, usa el token por defecto y lo guarda
- * @returns {string} Token API de Jira
- */
-function getApiToken() {
-  const properties = PropertiesService.getScriptProperties();
-  let token = properties.getProperty('JIRA_API_TOKEN');
-  
-  if (!token) {
-    // Token por defecto - se guarda automáticamente la primera vez
-    token = 'ATATT3xFfGF0grFjkn5B4vbvjpyvzJKpIwALcyCSZRuZfG3CN5x4IVuQEzEYejtDbAIVXEPU2xuVgmbNoFb6F0YDr7hFP_w_gnUWf5eBLOLmHTxsP_LiI3K45XtuO1cetv7fOhwvIvm7OCE2qcv-SV9rDlzS9gVhrAC0OeqrGR7g5bO6p6gvsfA=4A5E6894';
-    properties.setProperty('JIRA_API_TOKEN', token);
-    Logger.log('Token API guardado en PropertiesService');
-  }
-  
-  return token;
-}
-
-/**
- * Configura el token API manualmente
- * @param {string} token - Nuevo token API
- */
-function setupApiToken(token) {
-  if (!token) {
-    throw new Error('Token no proporcionado');
-  }
-  const properties = PropertiesService.getScriptProperties();
-  properties.setProperty('JIRA_API_TOKEN', token);
-  Logger.log('Token API actualizado exitosamente');
-}
-
-// ----------------------------------------------------------------------------
-// VALIDACIONES
-// ----------------------------------------------------------------------------
-
-/**
- * Valida la respuesta de la API de Jira
- * @param {Object} data - Datos de respuesta de la API
- * @returns {boolean} True si la respuesta es válida
- * @throws {Error} Si la respuesta es inválida
- */
-function validateJiraResponse(data) {
-  if (!data) {
-    throw new Error('Respuesta de API vacía o nula');
-  }
-  
-  if (typeof data !== 'object') {
-    throw new Error('Respuesta de API no es un objeto válido');
-  }
-  
-  // Para respuestas de búsqueda
-  if (data.issues !== undefined) {
-    if (!Array.isArray(data.issues)) {
-      throw new Error('Campo "issues" no es un array válido');
-    }
-    return true;
-  }
-  
-  return true;
-}
-
-/**
- * Valida que un ticket tenga la estructura esperada
- * @param {Object} issue - Ticket de Jira
- * @returns {boolean} True si el ticket es válido
- */
-function validateIssue(issue) {
-  if (!issue || !issue.key) {
-    return false;
-  }
-  if (!issue.fields) {
-    return false;
-  }
-  return true;
-}
-
-// ----------------------------------------------------------------------------
-// MANEJO DE ERRORES HTTP
-// ----------------------------------------------------------------------------
-
-/**
- * Realiza una petición HTTP con reintentos automáticos
- * @param {string} url - URL a consultar
- * @param {Object} options - Opciones de la petición
- * @param {number} retries - Número de reintentos restantes
- * @returns {Object} Respuesta de UrlFetchApp
- * @throws {Error} Si todos los reintentos fallan
- */
-function fetchWithRetry(url, options, retries = MAX_RETRIES) {
-  let lastError = null;
-  
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const response = UrlFetchApp.fetch(url, options);
-      const statusCode = response.getResponseCode();
-      
-      if (statusCode === 200) {
-        return response;
-      }
-      
-      // Log del error
-      const errorText = response.getContentText();
-      Logger.log(`Intento ${attempt + 1}/${retries + 1} - HTTP ${statusCode}: ${errorText.substring(0, 200)}`);
-      
-      // Errores que no deben reintentarse
-      if (statusCode === 401 || statusCode === 403) {
-        throw new Error(`Error de autenticación (${statusCode}): Verifica tu token API`);
-      }
-      
-      if (statusCode === 404) {
-        throw new Error(`Recurso no encontrado (${statusCode}): Verifica la URL`);
-      }
-      
-      // Para otros errores, reintentar
-      if (attempt < retries) {
-        Utilities.sleep(RETRY_DELAY_MS * (attempt + 1)); // Backoff exponencial
-        continue;
-      }
-      
-      lastError = new Error(`HTTP ${statusCode}: ${errorText.substring(0, 200)}`);
-      
-    } catch (e) {
-      lastError = e;
-      if (attempt < retries) {
-        Logger.log(`Error en intento ${attempt + 1}, reintentando en ${RETRY_DELAY_MS * (attempt + 1)}ms...`);
-        Utilities.sleep(RETRY_DELAY_MS * (attempt + 1));
-      }
-    }
-  }
-  
-  throw lastError || new Error('Error desconocido en petición HTTP');
-}
-
-// ----------------------------------------------------------------------------
-// FUNCIONES HELPER CENTRALIZADAS
-// ----------------------------------------------------------------------------
-
-/**
- * Mapea un estatus de Jira a un estatus objetivo estandarizado
- * @param {string} jiraStatus - Estatus de Jira
- * @returns {string} Estatus objetivo
- */
-function mapToTargetStatus(jiraStatus) {
-  if (!jiraStatus || jiraStatus === 'N/A (Sin Foto)') return 'QA';
-  
-  const normStatus = jiraStatus.trim().toLowerCase();
-  
-  if (normStatus === 'done' || normStatus === 'development done' || 
-      normStatus === 'resolved' || normStatus === 'closed' || 
-      normStatus === 'finished') return 'Done';
-  
-  if (normStatus === 'blocked' || normStatus === 'impediment') return 'Blocked';
-  
-  if (normStatus.includes('in progress') || normStatus === 'in development' || 
-      normStatus === 'doing' || normStatus === 'desarrollo') return 'In Progress';
-  
-  if (normStatus.includes('reopen')) return 'Reopen';
-  
-  if (normStatus.includes('qa') || normStatus.includes('test') || 
-      normStatus.includes('review') || normStatus.includes('staging')) return 'QA';
-  
-  if (normStatus === 'to do' || normStatus === 'backlog' || 
-      normStatus.includes('pendiente')) return 'To Do';
-  
-  return 'QA'; // Default
-}
-
-/**
- * Estatus objetivo estándar
- */
-const TARGET_STATUSES = ['To Do', 'Reopen', 'In Progress', 'QA', 'Blocked', 'Done'];
 
 // ----------------------------------------------------------------------------
 // HELPER FUNCTIONS
@@ -334,16 +154,17 @@ function calculateTimeInStatus(changelog, createdDateISO, resolvedDateISO, curre
 
 function writeDataInChunks(sheet, data) {
   if (!data || data.length === 0) return;
+  const chunkSize = 500;
   const totalRows = data.length;
   const numCols = data[0].length;
   
   sheet.getRange(1, 1, 1, numCols).setValues([data[0]]);
   sheet.getRange(1, 1, 1, numCols).setFontWeight('bold');
 
-    if (totalRows > 1) {
+  if (totalRows > 1) {
     const bodyData = data.slice(1);
-    for (let i = 0; i < bodyData.length; i += CHUNK_SIZE) {
-      const chunk = bodyData.slice(i, i + CHUNK_SIZE);
+    for (let i = 0; i < bodyData.length; i += chunkSize) {
+      const chunk = bodyData.slice(i, i + chunkSize);
       const normalizedChunk = chunk.map(row => {
           while (row.length < numCols) row.push('');
           return row;
@@ -352,41 +173,6 @@ function writeDataInChunks(sheet, data) {
       SpreadsheetApp.flush();
     }
   }
-}
-
-// ----------------------------------------------------------------------------
-// PROCESAMIENTO DE TICKETS (OPTIMIZACIÓN)
-// ----------------------------------------------------------------------------
-
-/**
- * Lee y procesa tickets de la hoja de datos una vez
- * Esta función centraliza el procesamiento para evitar duplicación
- * @returns {Array} Array de tickets procesados
- */
-function getProcessedTickets() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const dataSheet = ss.getSheetByName(SHEET_NAME);
-  if (!dataSheet || dataSheet.getLastRow() < 2) return [];
-  
-  const fullDataRange = dataSheet.getRange(1, 1, dataSheet.getLastRow(), dataSheet.getLastColumn());
-  const fullData = fullDataRange.getValues();
-  const visibleHeaders = fullData.shift();
-  
-  const visibleCount = 24;
-  const allHeaders = [
-    ...visibleHeaders.slice(0, visibleCount),
-    'Sprint Raw Data', 'Historical Statuses (JSON)', 'Fecha Inicio Dev ISO',
-    'Fecha Cierre Dev ISO', 'Created ISO', 'Resolved ISO', 'Issue Key',
-    'Historical SPs (JSON)'
-  ];
-  
-  const tickets = fullData.map(row => {
-    let ticket = {};
-    allHeaders.forEach((header, i) => { ticket[header] = row[i]; });
-    return ticket;
-  });
-  
-  return tickets;
 }
 
 // ----------------------------------------------------------------------------
@@ -439,8 +225,7 @@ function runImportAndMetrics() {
     dataSheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
 
     const fieldsToFetch = ['summary', 'issuetype', 'status', 'priority', 'assignee', 'resolution', 'resolutiondate', 'updated', STORY_POINTS_FIELD_ID, SPRINT_FIELD_ID, 'created', 'parent', 'changelog'].join(',');
-    const apiToken = getApiToken(); // Obtener token de forma segura
-    const authHeader = 'Basic ' + Utilities.base64Encode(`${YOUR_EMAIL}:${apiToken}`);
+    const authHeader = 'Basic ' + Utilities.base64Encode(`${YOUR_EMAIL}:${YOUR_API_TOKEN}`);
     const baseUrl = `https://${YOUR_JIRA_DOMAIN}`;
     const options = {
       'method': 'get',
@@ -451,39 +236,19 @@ function runImportAndMetrics() {
     let allIssues = [];
     let nextPageToken = null;
 
-    // Importar datos con manejo de errores mejorado
     do {
-      try {
-        let queryString = `jql=${encodeURIComponent(JQL_QUERY)}&maxResults=100&fields=${fieldsToFetch}&expand=changelog`;
-        if (nextPageToken) {
-          queryString += `&nextPageToken=${encodeURIComponent(nextPageToken)}`;
-        }
-        const url = `${baseUrl}/rest/api/3/search/jql?${queryString}`;
-        
-        // Usar fetchWithRetry para manejo automático de errores
-        const response = fetchWithRetry(url, options);
+      let queryString = `jql=${encodeURIComponent(JQL_QUERY)}&maxResults=100&fields=${fieldsToFetch}&expand=changelog`;
+      if (nextPageToken) {
+        queryString += `&nextPageToken=${encodeURIComponent(nextPageToken)}`;
+      }
+      const url = `${baseUrl}/rest/api/3/search/jql?${queryString}`;
+      const response = UrlFetchApp.fetch(url, options);
+      if (response.getResponseCode() === 200) {
         const data = JSON.parse(response.getContentText());
-        
-        // Validar respuesta
-        validateJiraResponse(data);
-        
-        if (data.issues && Array.isArray(data.issues)) {
-          // Validar cada issue antes de agregarlo
-          const validIssues = data.issues.filter(issue => validateIssue(issue));
-          allIssues = allIssues.concat(validIssues);
-          
-          if (DEBUG_MODE && validIssues.length < data.issues.length) {
-            Logger.log(`Se filtraron ${data.issues.length - validIssues.length} issues inválidos`);
-          }
-        }
-        
+        if (data.issues) allIssues = allIssues.concat(data.issues);
         nextPageToken = data.nextPageToken || null;
-        
-      } catch (error) {
-        Logger.log(`Error al importar datos de Jira: ${error.toString()}`);
-        SpreadsheetApp.getUi().alert(`Error al importar datos: ${error.message}`);
-        nextPageToken = null; // Detener el loop en caso de error
-        break;
+      } else {
+        nextPageToken = null;
       }
     } while (nextPageToken);
     
@@ -629,12 +394,161 @@ function runImportAndMetrics() {
     SpreadsheetApp.getUi().alert('Error during import: ' + e.toString());
   }
 
-  // Procesar métricas usando los datos ya importados
-  // Las funciones ahora leen directamente de la hoja para evitar reprocesamiento
   calculateDeveloperMetrics();
   calculateGlobalMetrics();
   generateLookerStudioData();
   generateCapacityPlanningData();
+}
+
+// ----------------------------------------------------------------------------
+// MÉTRICAS POR SPRINT (MetricasSprint)
+// ----------------------------------------------------------------------------
+function calculateSprintMetrics() {
+  Logger.log('--- STARTING SPRINT METRICS CALCULATION ---');
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const tickets = getProcessedTickets();
+    if (tickets.length === 0) return;
+
+    const metricsBySprint = {};
+    tickets.forEach(ticket => {
+      const sprintField = ticket['Sprint History'] || 'No Sprint';
+      const ticketSprints = sprintField.split(';').map(s => s.trim()).filter(s => s);
+      ticketSprints.forEach(sprintName => {
+        if (!metricsBySprint[sprintName]) metricsBySprint[sprintName] = { tickets: [] };
+        metricsBySprint[sprintName].tickets.push(ticket);
+      });
+    });
+    
+    // Obtener fechas de sprints y ordenar
+    Object.keys(metricsBySprint).forEach(sprintName => {
+      const sampleTicket = metricsBySprint[sprintName].tickets.find(t => t['Sprint Raw Data'] && t['Sprint Raw Data'] !== '[]');
+      let endDate = null;
+      let startDate = null;
+      if(sampleTicket) {
+        try {
+          const sprintDataArray = JSON.parse(sampleTicket['Sprint Raw Data']);
+          const sprintObject = sprintDataArray.find(s => s.name === sprintName);
+          if(sprintObject) {
+            if(sprintObject.endDate) endDate = new Date(sprintObject.endDate);
+            if(sprintObject.startDate) startDate = new Date(sprintObject.startDate);
+          }
+        } catch(e) {}
+      }
+      metricsBySprint[sprintName].endDate = endDate || new Date('2099-12-31');
+      metricsBySprint[sprintName].startDate = startDate || new Date(0);
+    });
+
+    const sortedSprintNames = Object.keys(metricsBySprint).sort((a, b) => {
+      const endDateA = metricsBySprint[a].endDate.getTime();
+      const endDateB = metricsBySprint[b].endDate.getTime();
+      if (endDateA > new Date().getTime() && endDateB > new Date().getTime()) {
+        return metricsBySprint[b].startDate.getTime() - metricsBySprint[a].startDate.getTime();
+      }
+      return endDateB - endDateA;
+    });
+
+    const resultRows = [['Sprint', 'Start Date', 'End Date', 'Total SP', 'Completed SP', 'Carryover SP', 'Total Tickets', 'Completed Tickets', 'Pending Tickets', 'Impediments', 'Avg Lead Time (días)', 'Completion %']];
+
+    for (const sprintName of sortedSprintNames) {
+      const allSprintTickets = metricsBySprint[sprintName].tickets;
+      let sprintFotoDate = null;
+      let startDate = 'N/A';
+      let endDate = 'N/A';
+      
+      const sampleTicket = allSprintTickets.find(t => t['Sprint Raw Data'] && t['Sprint Raw Data'] !== '[]');
+      if (sampleTicket) {
+        try {
+          const sprintDataArray = JSON.parse(sampleTicket['Sprint Raw Data']);
+          const sprintObject = sprintDataArray.find(s => s.name === sprintName);
+          if (sprintObject) {
+            if (sprintObject.startDate) startDate = new Date(sprintObject.startDate).toLocaleDateString();
+            if (sprintObject.endDate) endDate = new Date(sprintObject.endDate).toLocaleDateString();
+            if (sprintObject.completeDate) sprintFotoDate = new Date(sprintObject.completeDate);
+            else if (sprintObject.state === 'closed' && sprintObject.endDate) sprintFotoDate = new Date(sprintObject.endDate);
+            else if (sprintObject.endDate && new Date(sprintObject.endDate) < new Date()) sprintFotoDate = new Date(sprintObject.endDate);
+          }
+        } catch(e) {}
+      }
+
+      const getStatusForTicket = (ticket) => {
+        if (!sprintFotoDate) return ticket['Status'];
+        try {
+          const historicalStatuses = JSON.parse(ticket['Estatus por Sprint (JSON)']);
+          return historicalStatuses[sprintName] || 'N/A (Sin Foto)';
+        } catch(e) {
+            try {
+                const hist = JSON.parse(ticket['Historical Statuses (JSON)']);
+                return hist[sprintName] || 'N/A (Sin Foto)';
+            } catch (err) { return 'N/A (Error Foto)'; }
+        }
+      };
+
+      let totalSP = 0;
+      let completedSP = 0;
+      let totalTickets = allSprintTickets.length;
+      let completedTickets = 0;
+      let impediments = 0;
+      let leadTimeSum = 0;
+      let leadTimeCount = 0;
+
+      allSprintTickets.forEach(t => {
+        const status = getStatusForTicket(t);
+        const sp = Number(t['Story point estimate']) || 0;
+        totalSP += sp;
+        
+        if (status === 'Done' || status === 'Development Done') {
+          completedSP += sp;
+          completedTickets++;
+        }
+        
+        if (status === 'Blocked' || status === 'Impediment') {
+          impediments++;
+        }
+        
+        const startDateStr = t['Fecha Inicio Dev ISO'];
+        const closeDateStr = t['Fecha Cierre Dev ISO'];
+        if (startDateStr !== 'N/A' && closeDateStr !== 'N/A') {
+          try {
+            const startDate = new Date(startDateStr);
+            const closeDate = new Date(closeDateStr);
+            const leadTime = (closeDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+            if (leadTime >= 0) {
+              leadTimeSum += leadTime;
+              leadTimeCount++;
+            }
+          } catch(e) {}
+        }
+      });
+
+      const carryover = totalSP - completedSP;
+      const pendingTickets = totalTickets - completedTickets;
+      const avgLeadTime = leadTimeCount > 0 ? (leadTimeSum / leadTimeCount).toFixed(2) : 'N/A';
+      const completionPercent = totalTickets > 0 ? (completedTickets / totalTickets) : 0;
+
+      resultRows.push([sprintName, startDate, endDate, totalSP, completedSP, carryover, totalTickets, completedTickets, pendingTickets, impediments, avgLeadTime, completionPercent]);
+    }
+
+    let sprintMetricsSheet = ss.getSheetByName(METRICS_SHEET_NAME);
+    if (sprintMetricsSheet) {
+      sprintMetricsSheet.getFilter()?.remove();
+      sprintMetricsSheet.clear();
+    } else {
+      sprintMetricsSheet = ss.insertSheet(METRICS_SHEET_NAME);
+    }
+    writeDataInChunks(sprintMetricsSheet, resultRows);
+    sprintMetricsSheet.autoResizeColumns(1, resultRows[0].length);
+    
+    // Formatear columna de porcentaje
+    if (resultRows.length > 1) {
+      const completionCol = resultRows[0].indexOf('Completion %') + 1;
+      sprintMetricsSheet.getRange(2, completionCol, resultRows.length - 1, 1).setNumberFormat("0.00%");
+    }
+    
+    Logger.log('--- SPRINT METRICS CALCULATION COMPLETE ---');
+  } catch(e) {
+    Logger.log('Error Sprint Metrics: ' + e.toString());
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -644,9 +558,26 @@ function calculateDeveloperMetrics() {
   Logger.log('--- STARTING DEVELOPER METRICS CALCULATION ---');
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    // Usar función centralizada para obtener tickets procesados
-    const tickets = getProcessedTickets();
-    if (tickets.length === 0) return;
+    const dataSheet = ss.getSheetByName(SHEET_NAME);
+    if (!dataSheet || dataSheet.getLastRow() < 2) return;
+
+    const fullDataRange = dataSheet.getRange(1, 1, dataSheet.getLastRow(), dataSheet.getLastColumn());
+    const fullData = fullDataRange.getValues();
+    const visibleHeaders = fullData.shift();
+    
+    const visibleCount = 24;
+    const allHeaders = [
+      ...visibleHeaders.slice(0, visibleCount),
+      'Sprint Raw Data', 'Historical Statuses (JSON)', 'Fecha Inicio Dev ISO',
+      'Fecha Cierre Dev ISO', 'Created ISO', 'Resolved ISO', 'Issue Key',
+      'Historical SPs (JSON)'
+    ];
+    
+    const tickets = fullData.map(row => {
+      let ticket = {};
+      allHeaders.forEach((header, i) => { ticket[header] = row[i]; });
+      return ticket;
+    });
 
     const metricsBySprint = {};
     tickets.forEach(ticket => {
@@ -662,18 +593,34 @@ function calculateDeveloperMetrics() {
 
     Object.keys(metricsBySprint).forEach(sprintName => {
       const sampleTicket = metricsBySprint[sprintName].tickets.find(t => t['Sprint Raw Data'] && t['Sprint Raw Data'] !== '[]');
-      let endDate = new Date(0);
+      let endDate = null;
+      let startDate = null;
       if(sampleTicket) {
         try {
           const sprintDataArray = JSON.parse(sampleTicket['Sprint Raw Data']);
           const sprintObject = sprintDataArray.find(s => s.name === sprintName);
-          if(sprintObject && sprintObject.endDate) endDate = new Date(sprintObject.endDate);
+          if(sprintObject) {
+            if(sprintObject.endDate) endDate = new Date(sprintObject.endDate);
+            if(sprintObject.startDate) startDate = new Date(sprintObject.startDate);
+          }
         } catch(e) {}
       }
-      metricsBySprint[sprintName].endDate = endDate;
+      // Si no hay endDate, usar una fecha futura para que los sprints activos aparezcan primero
+      metricsBySprint[sprintName].endDate = endDate || new Date('2099-12-31');
+      metricsBySprint[sprintName].startDate = startDate || new Date(0);
     });
 
-    const sortedSprintNames = Object.keys(metricsBySprint).sort((a, b) => metricsBySprint[b].endDate - metricsBySprint[a].endDate);
+    // Ordenar: sprints activos (sin endDate) primero, luego por endDate descendente
+    const sortedSprintNames = Object.keys(metricsBySprint).sort((a, b) => {
+      const endDateA = metricsBySprint[a].endDate.getTime();
+      const endDateB = metricsBySprint[b].endDate.getTime();
+      // Si ambos son fechas futuras (sprints activos), ordenar por startDate descendente
+      if (endDateA > new Date().getTime() && endDateB > new Date().getTime()) {
+        return metricsBySprint[b].startDate.getTime() - metricsBySprint[a].startDate.getTime();
+      }
+      // Sprints cerrados: ordenar por endDate descendente (más reciente primero)
+      return endDateB - endDateA;
+    });
 
     for (const sprintName of sortedSprintNames) {
       const allSprintTickets = metricsBySprint[sprintName].tickets;
@@ -773,9 +720,26 @@ function calculateGlobalMetrics() {
   Logger.log('--- STARTING GLOBAL METRICS CALCULATION ---');
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    // Usar función centralizada para obtener tickets procesados
-    const tickets = getProcessedTickets();
-    if (tickets.length === 0) return;
+    const dataSheet = ss.getSheetByName(SHEET_NAME);
+    if (!dataSheet || dataSheet.getLastRow() < 2) return;
+
+    const fullDataRange = dataSheet.getRange(1, 1, dataSheet.getLastRow(), dataSheet.getLastColumn());
+    const fullData = fullDataRange.getValues();
+    const visibleHeaders = fullData.shift();
+    
+    const visibleCount = 24;
+    const allHeaders = [
+      ...visibleHeaders.slice(0, visibleCount),
+      'Sprint Raw Data', 'Historical Statuses (JSON)', 'Fecha Inicio Dev ISO',
+      'Fecha Cierre Dev ISO', 'Created ISO', 'Resolved ISO', 'Issue Key',
+      'Historical SPs (JSON)'
+    ];
+
+    const tickets = fullData.map(row => {
+      let ticket = {};
+      allHeaders.forEach((header, i) => { ticket[header] = row[i]; });
+      return ticket;
+    });
 
     function calculateDaysDiff(startISO, endISO) {
       if (startISO === 'N/A' || endISO === 'N/A') return null;
@@ -910,12 +874,38 @@ function generateLookerStudioData() {
   SpreadsheetApp.flush();
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    // Usar función centralizada para obtener tickets procesados
-    const tickets = getProcessedTickets();
-    if (tickets.length === 0) return;
+    const dataSheet = ss.getSheetByName(SHEET_NAME);
+    if (!dataSheet || dataSheet.getLastRow() < 2) return;
+
+    const fullDataRange = dataSheet.getRange(1, 1, dataSheet.getLastRow(), dataSheet.getLastColumn());
+    const fullData = fullDataRange.getValues();
+    const visibleHeaders = fullData.shift();
+    const visibleCount = 24;
+    const allHeaders = [...visibleHeaders.slice(0, visibleCount), 'Sprint Raw Data', 'Historical Statuses (JSON)', 'Fecha Inicio Dev ISO', 'Fecha Cierre Dev ISO', 'Created ISO', 'Resolved ISO', 'Issue Key', 'Historical SPs (JSON)'];
+
+    const tickets = fullData.map(row => {
+      let ticket = {};
+      allHeaders.forEach((header, i) => { ticket[header] = row[i]; });
+      return ticket;
+    });
     
     const projectKeyMatch = JQL_QUERY.match(/project\s*=\s*"([^"]+)"/i);
     const projectName = projectKeyMatch ? projectKeyMatch[1].toUpperCase() : 'PROJECT';
+
+    const TARGET_STATUSES = ['To Do', 'Reopen', 'In Progress', 'QA', 'Blocked', 'Done'];
+    
+    function mapToTargetStatus(jiraStatus) {
+        if (!jiraStatus || jiraStatus === 'N/A (Sin Foto)') return 'QA';
+        const normStatus = jiraStatus.trim().toLowerCase();
+
+        if (normStatus === 'done' || normStatus === 'development done' || normStatus === 'resolved' || normStatus === 'closed' || normStatus === 'finished') return 'Done';
+        if (normStatus === 'blocked' || normStatus === 'impediment') return 'Blocked';
+        if (normStatus.includes('in progress') || normStatus === 'in development' || normStatus === 'doing' || normStatus === 'desarrollo') return 'In Progress';
+        if (normStatus.includes('reopen')) return 'Reopen';
+        if (normStatus.includes('qa') || normStatus.includes('test') || normStatus.includes('review') || normStatus.includes('staging')) return 'QA';
+        if (normStatus === 'to do' || normStatus === 'backlog' || normStatus.includes('pendiente')) return 'To Do';
+        return 'QA';
+    }
     
     const sprintHeader = ['Project Name', 'Sprint Name', 'Start Date', 'End Date', ...TARGET_STATUSES, 'Total SP', 'Completed SP', 'Carryover SP', 'Impediments', 'Avg Lead Time', 'Total Tickets', 'Completed Tickets', 'Pending Tickets', 'Completion %', 'Total QA'];
     const devHeader = ['Project Name', 'Sprint Name', 'Developer', ...TARGET_STATUSES, 'Workload (SP)', 'Velocity (SP)', 'Carryover (SP)', 'Tickets Assigned', 'Avg Lead Time', 'Completed Tickets', 'Pending Tickets', 'Completion %', 'Total QA'];
@@ -1064,9 +1054,20 @@ function generateCapacityPlanningData() {
     Logger.log('--- STARTING CAPACITY PLANNING DATA GENERATION (Fixed) ---');
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
-        // Usar función centralizada para obtener tickets procesados
-        const tickets = getProcessedTickets();
-        if (tickets.length === 0) return;
+        const dataSheet = ss.getSheetByName(SHEET_NAME);
+        if (!dataSheet || dataSheet.getLastRow() < 2) return;
+
+        const fullDataRange = dataSheet.getRange(1, 1, dataSheet.getLastRow(), dataSheet.getLastColumn());
+        const fullData = fullDataRange.getValues();
+        const visibleHeaders = fullData.shift();
+        const visibleCount = 24;
+        const allHeaders = [...visibleHeaders.slice(0, visibleCount), 'Sprint Raw Data', 'Historical Statuses (JSON)', 'Fecha Inicio Dev ISO', 'Fecha Cierre Dev ISO', 'Created ISO', 'Resolved ISO', 'Issue Key', 'Historical SPs (JSON)'];
+
+        const tickets = fullData.map(row => {
+          let ticket = {};
+          allHeaders.forEach((header, i) => { ticket[header] = row[i]; });
+          return ticket;
+        });
         
         const projectKeyMatch = JQL_QUERY.match(/project\s*=\s*"([^"]+)"/i);
         const projectName = projectKeyMatch ? projectKeyMatch[1].toUpperCase() : 'PROJECT';
@@ -1084,6 +1085,18 @@ function generateCapacityPlanningData() {
         });
         
         function mapSpToHours(sp) { const spMap = { 1: 3, 2: 8, 3: 16, 5: 32, 8: 64, 13: 104 }; return spMap[sp] || (sp * 8); }
+        const TARGET_STATUSES = ['To Do', 'Reopen', 'In Progress', 'QA', 'Blocked', 'Done'];
+        function mapToTargetStatus(jiraStatus) {
+            if (!jiraStatus || jiraStatus === 'N/A (Sin Foto)') return 'QA';
+            const normStatus = jiraStatus.trim().toLowerCase();
+            if (normStatus === 'done' || normStatus === 'development done' || normStatus === 'resolved' || normStatus === 'closed' || normStatus === 'finished') return 'Done';
+            if (normStatus === 'blocked' || normStatus === 'impediment') return 'Blocked';
+            if (normStatus.includes('in progress') || normStatus === 'in development' || normStatus === 'doing' || normStatus === 'desarrollo') return 'In Progress';
+            if (normStatus.includes('reopen')) return 'Reopen';
+            if (normStatus.includes('qa') || normStatus.includes('test') || normStatus.includes('review') || normStatus.includes('staging')) return 'QA';
+            if (normStatus === 'to do' || normStatus === 'backlog' || normStatus.includes('pendiente')) return 'To Do';
+            return 'QA';
+        }
 
         const header = ['Project', 'Sprint N', 'Sprint', 'Start Date', 'End Date', 'Team member', 'Project Allocation (%)', 'Total days in sprint', 'Agency Holidays', 'PTO days', 'Other work/ Meetings (in days)', 'Available sprint days', 'Work day hours', 'Hours for tasks', 'Hrs Planned', '% Capacity assigned', 'Unplanned Capacity', '% Unplanned', 'Share of capacity', 'Hours delivered', 'Peformance Planned/Delivered', 'Performance Available/delivered', 'Feature assignment', 'Feature planned hours', 'Feature shared capacity %', 'Priority assignment', 'Priority planned hours', 'Priority shared capacity %', 'SP Equivalence', 'SP to Hours', 'Sprint Tasks Status', 'Sprint Task Status Number', 'Sprint Tasks Planned', 'Sprint Tasks Completed', 'Sprint Total Remaining Days', 'Sprint Actual Day', 'SP Planned to Deliver to date', 'SP Planned to Deliver Today (%)', 'SP Delivered to date', 'SP Delivered to date (%)', 'Current Sprint Performance'];
         const capacityRows = [header];
