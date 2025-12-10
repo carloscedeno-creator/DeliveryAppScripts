@@ -643,6 +643,7 @@ function runImportAndMetrics() {
 function calculateDeveloperMetrics() {
   Logger.log('--- STARTING DEVELOPER METRICS CALCULATION ---');
   try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
     // Usar función centralizada para obtener tickets procesados
     const tickets = getProcessedTickets();
     if (tickets.length === 0) return;
@@ -771,6 +772,7 @@ function calculateDeveloperMetrics() {
 function calculateGlobalMetrics() {
   Logger.log('--- STARTING GLOBAL METRICS CALCULATION ---');
   try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
     // Usar función centralizada para obtener tickets procesados
     const tickets = getProcessedTickets();
     if (tickets.length === 0) return;
@@ -907,6 +909,7 @@ function generateLookerStudioData() {
   Logger.log('--- STARTING LOOKER STUDIO DATA GENERATION ---');
   SpreadsheetApp.flush();
   try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
     // Usar función centralizada para obtener tickets procesados
     const tickets = getProcessedTickets();
     if (tickets.length === 0) return;
@@ -1060,6 +1063,7 @@ function generateLookerStudioData() {
 function generateCapacityPlanningData() {
     Logger.log('--- STARTING CAPACITY PLANNING DATA GENERATION (Fixed) ---');
     try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
         // Usar función centralizada para obtener tickets procesados
         const tickets = getProcessedTickets();
         if (tickets.length === 0) return;
