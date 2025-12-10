@@ -45,10 +45,13 @@ const CAPACITY_SHEET_NAME = 'Data_Capacity_Planning';
  */
 function getApiToken() {
   const properties = PropertiesService.getScriptProperties();
-  const token = properties.getProperty('JIRA_API_TOKEN');
+  let token = properties.getProperty('JIRA_API_TOKEN');
   
   if (!token) {
-    throw new Error('Token API no configurado. Por favor ejecuta setupApiToken("tu_token_aqui") primero.');
+    // Token por defecto - se guarda automáticamente la primera vez
+    token = 'ATATT3xFfGF0grFjkn5B4vbvjpyvzJKpIwALcyCSZRuZfG3CN5x4IVuQEzEYejtDbAIVXEPU2xuVgmbNoFb6F0YDr7hFP_w_gnUWf5eBLOLmHTxsP_LiI3K45XtuO1cetv7fOhwvIvm7OCE2qcv-SV9rDlzS9gVhrAC0OeqrGR7g5bO6p6gvsfA=4A5E6894';
+    properties.setProperty('JIRA_API_TOKEN', token);
+    Logger.log('Token API guardado en PropertiesService');
   }
   
   return token;
