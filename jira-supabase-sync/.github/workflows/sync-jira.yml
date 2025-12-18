@@ -1,0 +1,51 @@
+name: Jira → Supabase Sync
+
+on:
+  schedule:
+    # Ejecuta cada 30 minutos
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # Permite ejecución manual desde GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run sync
+        env:
+          # Configuración de proyectos (JSON con todos los proyectos)
+          PROJECTS_CONFIG: ${{ secrets.PROJECTS_CONFIG }}
+          # O usar variables individuales si prefieres:
+          # PROJECT_1_KEY: ${{ secrets.PROJECT_1_KEY }}
+          # PROJECT_1_NAME: ${{ secrets.PROJECT_1_NAME }}
+          # PROJECT_1_JIRA_DOMAIN: ${{ secrets.PROJECT_1_JIRA_DOMAIN }}
+          # PROJECT_1_JIRA_EMAIL: ${{ secrets.PROJECT_1_JIRA_EMAIL }}
+          # PROJECT_1_JIRA_API_TOKEN: ${{ secrets.PROJECT_1_JIRA_API_TOKEN }}
+          # ... (repetir para cada proyecto)
+          # Supabase (compartido para todos los proyectos)
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SYNC_INTERVAL_MINUTES: '30'
+        run: npm run sync
+      
+      - name: Upload logs (if error)
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: sync-logs
+          path: |
+            *.log
+            logs/

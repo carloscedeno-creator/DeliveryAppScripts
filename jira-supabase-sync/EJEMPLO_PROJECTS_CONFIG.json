@@ -1,0 +1,30 @@
+[
+  {
+    "projectKey": "OBD",
+    "projectName": "OBD Project",
+    "jiraDomain": "goavanto.atlassian.net",
+    "jiraEmail": "carlos.cedeno@agenticdream.com",
+    "jiraApiToken": "REEMPLAZA_CON_TOKEN_DE_GOAVANTO"
+  },
+  {
+    "projectKey": "PROYECTO2_GOAVANTO",
+    "projectName": "Segundo Proyecto Goavanto",
+    "jiraDomain": "goavanto.atlassian.net",
+    "jiraEmail": "carlos.cedeno@agenticdream.com",
+    "jiraApiToken": "REEMPLAZA_CON_TOKEN_DE_GOAVANTO"
+  },
+  {
+    "projectKey": "ADT",
+    "projectName": "Agile Dream Team",
+    "jiraDomain": "agiledreamteam.atlassian.net",
+    "jiraEmail": "carlos.cedeno@agenticdream.com",
+    "jiraApiToken": "REEMPLAZA_CON_TOKEN_DE_AGILEDREAMTEAM"
+  },
+  {
+    "projectKey": "PROYECTO2_ADT",
+    "projectName": "Segundo Proyecto ADT",
+    "jiraDomain": "agiledreamteam.atlassian.net",
+    "jiraEmail": "carlos.cedeno@agenticdream.com",
+    "jiraApiToken": "REEMPLAZA_CON_TOKEN_DE_AGILEDREAMTEAM"
+  }
+]
